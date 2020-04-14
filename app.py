@@ -9,7 +9,8 @@ import datetime as dt
 import sqlite3
 import sqlalchemy
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, and_
+
 
 from flask import Flask, jsonify
 #--------------------
@@ -122,16 +123,18 @@ def tobs():
 def given_date(date):
     session = Session(engine)
     results = session.query(func.avg(Measurement.tobs), func.max(Measurement.tobs), func.min(Measurement.tobs)).\
-        filter(Measurement.date >= date).all()
+        filter(Measurement.date >= date).\
+        group_by(Measurement.date).all()
     data_list = []
     for result in results:
         row = {}
         row['Start Date'] = date
         row['End Date'] = '2017-08-23'
-        row['Average Temperature'] = float(result[0])
-        row['Highest Temperature'] = float(result[1])
-        row['Lowest Temperature'] = float(result[2])
+        row['Average Temperature'] = result[0]
+        row['Highest Temperature'] = result[1]
+        row['Lowest Temperature'] = result[2]
         data_list.append(row)
+    session.close()
 
     return jsonify(data_list)
 
@@ -139,19 +142,24 @@ def given_date(date):
 #Start date/End date query page
 
 @app.route('/api/v1.0/<start>/<stop>')
-def get_t_start_stop(start,stop):
+def temp_range_start_stop(start,stop):
     session = Session(engine)
-    queryresult = session.query(func.min(Measurement.tobs), func.avg(Measurement.tobs), func.max(Measurement.tobs)).\
-        filter(Measurement.date >= start).filter(Measurement.date <= stop).all()
-    session.close()
+    results = session.query(Measurement.date,\
+                            func.min(Measurement.tobs),\
+                            func.avg(Measurement.tobs),\
+                            func.max(Measurement.tobs)).\
+                            filter(and_(Measurement.date >= start, Measurement.date <= stop)).\
+                            group_by(Measurement.date).all()
 
     tobs_query = []
-    for min,avg,max in queryresult:
-        tobs_dict = {}
-        tobs_dict["Min"] = min
-        tobs_dict["Average"] = avg
-        tobs_dict["Max"] = max
-        tobs_query.append(tobs_dict)
+    for date,min,avg,max in results:
+        row = {}
+        row['Date'] = date
+        row['Lowest Temperature'] = min
+        row['Average Temperature'] = avg
+        row['Highest Temperature'] = max
+        tobs_query.append(row)
+    session.close()
 
     return jsonify(tobs_query)
 
